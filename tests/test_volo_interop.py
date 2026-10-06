@@ -231,6 +231,8 @@ def test_mixin_gates_grasp_on_gripper_closure():
     # Open gripper: contact suppressed, matching the historical wire format.
     assert open_grip["robot"]["grasped_object"] is None
     assert open_grip["robot"]["objects_in_contact"] == []
+    # The ungated sensor list still goes out (a wide object can stall the fingers below the gate).
+    assert open_grip["robot"]["objects_in_contact_raw"] == ["banana"]
     assert closed_grip["robot"]["grasped_object"] == "banana"
     assert closed_grip["robot"]["objects_in_contact"] == ["banana"]
 

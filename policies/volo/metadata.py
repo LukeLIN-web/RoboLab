@@ -162,8 +162,11 @@ class OrchestratorMetadataMixin:
 
         Matches the historical wire behavior: with the gripper open, no
         contacts and no grasp are reported even if the contact sensor fires.
+        The ungated sensor list goes out as ``objects_in_contact_raw``: a
+        wide object can stop the fingers below the closure gate while held.
         """
         contacts = list(robot.get("objects_in_contact", []))
+        robot["objects_in_contact_raw"] = contacts
         if float(robot.get("gripper_closedness", 0.0)) > GRASP_CLOSEDNESS_THRESHOLD:
             robot["grasped_object"] = contacts[0] if contacts else None
             robot["objects_in_contact"] = contacts

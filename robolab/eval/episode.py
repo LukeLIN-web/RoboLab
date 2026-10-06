@@ -219,6 +219,11 @@ def run_episode(
 
             actual_steps += 1
 
+            # End envs whose server has nothing left to do (see InferenceClient.ended_env_ids).
+            ended = sorted(client.ended_env_ids() & set(env.active_env_ids))
+            if ended:
+                env.end_envs(ended)
+
             # RobolabEnv freezes terminated envs and exports recordings automatically
             if env.all_terminated:
                 break

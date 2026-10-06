@@ -9,6 +9,10 @@ from typing import Any
 
 import numpy as np
 
+# A server may end an env's episode early by setting this key in a response
+# (e.g. an orchestrating proxy with nothing left to do); see ended_env_ids().
+EPISODE_DONE_KEY = "__episode_done"
+
 
 class InferenceClient(ABC):
     """Root client for policy inference.
@@ -42,6 +46,7 @@ class InferenceClient(ABC):
         # they want.
         self._chunks: dict[int, np.ndarray] = {}
         self._counters: dict[int, int] = {}
+        self._ended_env_ids: set[int] = set()
         # Set by begin_episode(); see below.
         self._eval_episode_idx: int = 0
 
@@ -70,6 +75,8 @@ class InferenceClient(ABC):
         if self._needs_refresh(env_id):
             request = self._pack_request(extracted, instruction)
             response = self._query_server(request)
+            if isinstance(response, dict) and response.get(EPISODE_DONE_KEY):
+                self._ended_env_ids.add(env_id)
             chunk = self._unpack_response(response)
             chunk = self._postprocess_chunk(chunk)
             self._set_chunk(env_id, chunk)
@@ -95,6 +102,14 @@ class InferenceClient(ABC):
             for env_id in env_ids
         }
 
+    def ended_env_ids(self) -> set[int]:
+        """Envs whose server asked to end the episode (``EPISODE_DONE_KEY``).
+
+        The eval loop ends them at once (``RobolabEnv.end_envs``) instead of
+        stepping them to the time limit.
+        """
+        return self._ended_env_ids
+
     def reset(self, *, env_id: int | None = None) -> None:
         """Clear per-episode state. ``env_id=None`` resets all envs.
 
@@ -104,9 +119,11 @@ class InferenceClient(ABC):
         if env_id is None:
             self._chunks.clear()
             self._counters.clear()
+            self._ended_env_ids.clear()
         else:
             self._chunks.pop(env_id, None)
             self._counters.pop(env_id, None)
+            self._ended_env_ids.discard(env_id)
 
     def close(self) -> None:
         """Release transport resources. Default: no-op."""

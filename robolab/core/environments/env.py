@@ -29,6 +29,7 @@ class RobolabEnv(ManagerBasedRLEnv):
     - Frozen terminated envs: when an env terminates, it holds its final state
       instead of auto-resetting. Actions for frozen envs are zeroed out.
     - Per-env result tracking (success/truncated, termination step)
+    - Ending envs on request (``end_envs``): frozen and recorded as truncated
     """
 
     def __init__(self, cfg, **kwargs):
@@ -99,18 +100,7 @@ class RobolabEnv(ManagerBasedRLEnv):
                     super()._reset_idx(artifact_ids)
                     get_world(self).reset_predicate_state(artifact_ids)
                     continue
-                self._frozen_envs[eid] = True
-                self._env_results[eid] = bool(self.termination_manager.terminated[eid])
-                self._env_term_step[eid] = ep_len
-                # Auto-export recording for this env
-                if self.recorder_manager is not None:
-                    try:
-                        self.recorder_manager.export_episodes(env_ids=[eid])
-                    except Exception:
-                        logger.exception(
-                            "Failed to export recording for env_id=%d at step=%d; episode data may be incomplete.",
-                            eid, ep_len,
-                        )
+                self._freeze(eid, success=bool(self.termination_manager.terminated[eid]))
 
         # Only reset non-frozen envs (typically none in eval)
         mask = ~self._frozen_envs[env_ids]
@@ -118,6 +108,31 @@ class RobolabEnv(ManagerBasedRLEnv):
         if len(active_ids) > 0:
             super()._reset_idx(active_ids)
             get_world(self).reset_predicate_state(active_ids)
+
+    def _freeze(self, eid: int, *, success: bool) -> None:
+        """Hold env ``eid`` at its final state: record its result and export its recording."""
+        ep_len = int(self.episode_length_buf[eid].item())
+        self._frozen_envs[eid] = True
+        self._env_results[eid] = success
+        self._env_term_step[eid] = ep_len
+        if self.recorder_manager is not None:
+            try:
+                self.recorder_manager.export_episodes(env_ids=[eid])
+            except Exception:
+                logger.exception(
+                    "Failed to export recording for env_id=%d at step=%d; episode data may be incomplete.",
+                    eid, ep_len,
+                )
+
+    def end_envs(self, env_ids: list[int]) -> None:
+        """End still-running envs now, as truncated (not successful).
+
+        For a client that has nothing left to do before the time limit; an env
+        that had succeeded would already have terminated on that step.
+        """
+        for eid in env_ids:
+            if not self._frozen_envs[eid]:
+                self._freeze(eid, success=False)
 
     @property
     def all_terminated(self) -> bool:

@@ -95,7 +95,7 @@ override-dependencies = ["websockets>=14.0"]
 # warp-lang 1.13.0.dev20260418 on pypi.nvidia.com only published the macOS
 # wheel — no Linux build — so any resolver pass that picked it would break
 # `uv sync` on Linux. Exclude that specific version.
-constraint-dependencies = ["warp-lang != 1.13.0.dev20260418"]
+constraint-dependencies = ["warp-lang == 1.8.1"]
 
 [tool.uv.extra-build-dependencies]
 # flatdict 4.0.1 ships sdist-only and its legacy setup.py needs an older

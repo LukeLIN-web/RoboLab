@@ -39,8 +39,14 @@ def test_server_can_end_an_env_until_reset():
     assert client.ended_env_ids() == set()
 
 
+class _Bookkeeping(RobolabEnv):
+    """RobolabEnv's termination bookkeeping without a scene."""
+
+    num_envs = 2
+
+
 def test_ended_env_is_frozen_as_truncated_at_its_step():
-    env = RobolabEnv.__new__(RobolabEnv)  # the bookkeeping only, no scene
+    env = _Bookkeeping.__new__(_Bookkeeping)
     env._frozen_envs = torch.zeros(2, dtype=torch.bool)
     env.episode_length_buf = torch.tensor([10, 20])
     env._env_results, env._env_term_step = {}, {}

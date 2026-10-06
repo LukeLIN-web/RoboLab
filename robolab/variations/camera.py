@@ -8,13 +8,15 @@ from isaaclab.sensors import CameraCfg, TiledCameraCfg
 from isaaclab.utils import configclass
 
 
-def with_depth(camera_cfg_cls):
-    """Return a variant of ``camera_cfg_cls`` whose cameras also render depth.
+def with_data_types(camera_cfg_cls, *data_types):
+    """Return a variant of ``camera_cfg_cls`` whose cameras also render ``data_types``.
 
-    Builds a subclass with each contained camera's ``data_types`` extended by
-    ``"depth"``, leaving the original class untouched so registrations without
-    depth keep their rgb-only render cost. Camera attribute names (and thus
-    prim paths and observation term names) are unchanged.
+    Builds a subclass with each contained camera's ``data_types`` extended,
+    leaving the original class untouched so registrations without the extra
+    annotators keep their rgb-only render cost. Camera attribute names (and
+    thus prim paths and observation term names) are unchanged. Instance-id
+    segmentation is rendered as raw ids (not colorized) so that each id maps
+    to a prim path (see ``robolab.core.observations.observation_utils.object_ids``).
     """
     instance = camera_cfg_cls()
     overrides = {}
@@ -22,14 +24,20 @@ def with_depth(camera_cfg_cls):
         if attr_name.startswith("_"):
             continue
         attr_value = getattr(instance, attr_name)
-        if isinstance(attr_value, CameraCfg) and "depth" not in attr_value.data_types:
+        if not isinstance(attr_value, CameraCfg):
+            continue
+        missing = [t for t in data_types if t not in attr_value.data_types]
+        if missing:
             camera = copy.deepcopy(attr_value)
-            camera.data_types = [*camera.data_types, "depth"]
+            camera.data_types = [*camera.data_types, *missing]
+            camera.colorize_instance_id_segmentation = False
             overrides[attr_name] = camera
     if not overrides:
         return camera_cfg_cls
-    variant = type(f"{camera_cfg_cls.__name__}WithDepth", (camera_cfg_cls,), overrides)
+    suffix = "".join(t.title().replace("_", "") for t in data_types)
+    variant = type(f"{camera_cfg_cls.__name__}With{suffix}", (camera_cfg_cls,), overrides)
     return configclass(variant)
+
 
 
 @configclass

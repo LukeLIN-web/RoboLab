@@ -57,6 +57,25 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+# Objects that are scene fixtures, not manipulable.
+FIXTURE_NAMES = {"table", "robot"}
+
+
+def scene_object_names(env_cfg: Any) -> list[str]:
+    """Manipulable scene objects: ``contact_object_list`` minus fixtures.
+
+    The order is part of the wire format: it is ``gt_state["scene_objects"]``
+    and, through :func:`object_id_map`, the value space of the per-pixel
+    object-id images (``robolab.core.observations.observation_utils.object_ids``).
+    """
+    contact_list: list[str] = getattr(env_cfg, "contact_object_list", []) or []
+    return [n for n in contact_list if n not in FIXTURE_NAMES]
+
+
+def object_id_map(scene_objects: list[str]) -> dict[str, int]:
+    """Pixel value of each scene object in the object-id images; 0 is everything else."""
+    return {name: k + 1 for k, name in enumerate(scene_objects)}
+
 
 class GroundTruthStateExporter:
     """Export per-env ground-truth sim state for inference-time consumers.
@@ -78,9 +97,6 @@ class GroundTruthStateExporter:
             gripper-contact query.
     """
 
-    # Objects that are scene fixtures, not manipulable.
-    FIXTURE_NAMES = {"table", "robot"}
-
     def __init__(
         self,
         env: Any,
@@ -97,8 +113,7 @@ class GroundTruthStateExporter:
         self.gripper_joint_name = gripper_joint_name
         self.gripper_joint_closed_pos = gripper_joint_closed_pos
         self.gripper_contact_body = gripper_contact_body
-        contact_list: list[str] = getattr(env_cfg, "contact_object_list", []) or []
-        self._object_names: list[str] = [n for n in contact_list if n not in self.FIXTURE_NAMES]
+        self._object_names: list[str] = scene_object_names(env_cfg)
         self._step = 0
         self._subtask_recorder = self._find_subtask_recorder()
 

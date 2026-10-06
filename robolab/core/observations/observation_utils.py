@@ -6,11 +6,19 @@ from typing import Any, List
 import isaaclab.envs.mdp as mdp
 import numpy as np
 import torch
+from isaaclab.managers import ManagerTermBase
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import CameraCfg
 from isaaclab.utils import configclass
+
+from robolab.core.world.world_state import get_world
+from robolab.eval.gt_state import object_id_map, scene_object_names
+
+# Annotator behind the per-pixel object-id images (rendered uncolorized, see
+# robolab.variations.camera.with_data_types).
+OBJECT_ID_DATA_TYPE = "instance_id_segmentation_fast"
 
 
 def _image_observation_func():
@@ -75,6 +83,56 @@ def camera_intrinsics(env: Any, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
     if matrices is None:
         return torch.zeros((env.num_envs, 3, 3), device=env.device, dtype=torch.float32)
     return matrices
+
+
+class object_ids(ManagerTermBase):
+    """Per-pixel scene-object id, (num_envs, H, W, 1) uint8.
+
+    Pixel values follow ``object_id_map(scene_object_names(env.cfg))``; 0 is
+    everything else (table, robot, background). Instance-id segmentation
+    labels each id with a prim path; an id belongs to an object when its prim
+    lies under the object's root prim. Object root prims are static, so they
+    are resolved once.
+    """
+
+    def __init__(self, cfg: ObsTerm, env: Any):
+        super().__init__(cfg, env)
+        self._roots: list[list[tuple[int, str]]] | None = None
+
+    def _object_roots(self, env: Any) -> list[list[tuple[int, str]]]:
+        """Per env: (object id, root prim path) for every object present in the scene."""
+        world = get_world(env)
+        roots: list[list[tuple[int, str]]] = [[] for _ in range(env.num_envs)]
+        for name, value in object_id_map(scene_object_names(env.cfg)).items():
+            try:
+                world.get_body(name)
+            except ValueError:
+                continue
+            for env_id in range(env.num_envs):
+                roots[env_id].append((value, str(world._get_prim(name, env_id).GetPath())))
+        return roots
+
+    def __call__(self, env: Any, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+        sensor = env.scene.sensors[sensor_cfg.name]
+        out = torch.zeros(
+            (env.num_envs, sensor.cfg.height, sensor.cfg.width, 1), device=env.device, dtype=torch.uint8
+        )
+        # A TiledCamera keeps one id legend for all env tiles; it appears with
+        # the first render (the output buffer is pre-allocated).
+        legend = sensor.data.info.get(OBJECT_ID_DATA_TYPE)
+        if legend is None:
+            return out
+        if self._roots is None:
+            self._roots = self._object_roots(env)
+        ids = sensor.data.output[OBJECT_ID_DATA_TYPE]
+        id_to_prim = legend["idToLabels"]
+        for env_id, roots in enumerate(self._roots):
+            for value, root in roots:
+                members = [int(i) for i, p in id_to_prim.items() if p == root or p.startswith(root + "/")]
+                if members:
+                    hit = torch.isin(ids[env_id], torch.tensor(members, device=ids.device, dtype=ids.dtype))
+                    out[env_id][hit] = value
+        return out
 
 
 def object_pos(env: Any, asset_cfg: SceneEntityCfg) -> torch.Tensor:
@@ -186,7 +244,7 @@ def generate_image_obs_from_cameras(camera_cfgs: List[Any] | Any):
                             "normalize": False,
                         }
                     )
-                    # Cameras that render depth (see robolab.variations.camera.with_depth)
+                    # Cameras that render depth (see robolab.variations.camera.with_data_types)
                     # also get <camera>_depth plus pose/intrinsics metadata terms, so
                     # calibration flows through the standard observation pipeline
                     # (per-env, recorded like any other term).
@@ -208,6 +266,11 @@ def generate_image_obs_from_cameras(camera_cfgs: List[Any] | Any):
                                 func=term_func,
                                 params={"sensor_cfg": SceneEntityCfg(camera_name)},
                             )
+                    if OBJECT_ID_DATA_TYPE in attr_value.data_types:
+                        obs_terms[f"{camera_name}_object_ids"] = ObsTerm(
+                            func=object_ids,
+                            params={"sensor_cfg": SceneEntityCfg(camera_name)},
+                        )
 
     # Create the dynamic image observation group class
     @configclass

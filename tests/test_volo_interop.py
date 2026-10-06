@@ -154,6 +154,21 @@ def test_orchestrator_keys_forward_camera_depth_rgb_and_gt_state():
     assert "lifted" not in env1_state["objects"]["cup"]
 
 
+def test_object_id_images_go_out_with_their_legend():
+    client = _VoloClient()
+    ids = np.zeros((2, 5, 6, 1), dtype=np.uint8)
+    ids[1, 0:2, 0:3] = 2
+    obs = {
+        "viewport_cam": {"egocentric_mirrored_camera_object_ids": _Tensor(ids)},
+        "gt_state": {1: {"objects": {}, "scene_objects": ["bowl", "cup"]}},
+    }
+
+    result = client._orchestrator_keys(obs, env_id=1)
+
+    np.testing.assert_array_equal(result["gt_seg/body_ids_front"], ids[1])
+    assert result["gt_seg/obj_body_id"] == {"bowl": 1, "cup": 2}
+
+
 def test_gt_state_missing_env_entry_is_skipped():
     client = _VoloClient()
 

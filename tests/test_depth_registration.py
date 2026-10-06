@@ -4,11 +4,11 @@
 """Tests for the opt-in depth camera flag (registration-time)."""
 
 from robolab.core.observations.observation_utils import generate_image_obs_from_cameras
-from robolab.variations.camera import OverShoulderLeftCameraCfg, with_depth
+from robolab.variations.camera import OverShoulderLeftCameraCfg, with_data_types
 
 
-def test_with_depth_returns_variant_and_preserves_original():
-    depth_cls = with_depth(OverShoulderLeftCameraCfg)
+def test_with_data_types_returns_variant_and_preserves_original():
+    depth_cls = with_data_types(OverShoulderLeftCameraCfg, "depth")
 
     assert depth_cls is not OverShoulderLeftCameraCfg
     assert depth_cls().over_shoulder_left_camera.data_types == ["rgb", "depth"]
@@ -17,9 +17,9 @@ def test_with_depth_returns_variant_and_preserves_original():
     assert OverShoulderLeftCameraCfg().over_shoulder_left_camera.data_types == ["rgb"]
 
 
-def test_with_depth_is_idempotent():
-    depth_cls = with_depth(OverShoulderLeftCameraCfg)
-    assert with_depth(depth_cls) is depth_cls
+def test_with_data_types_is_idempotent():
+    depth_cls = with_data_types(OverShoulderLeftCameraCfg, "depth")
+    assert with_data_types(depth_cls, "depth") is depth_cls
 
 
 def test_depth_cameras_get_matching_observation_terms():
@@ -27,7 +27,7 @@ def test_depth_cameras_get_matching_observation_terms():
     for term_suffix in ("depth", "pos", "quat", "K"):
         assert not hasattr(rgb_obs, f"over_shoulder_left_camera_{term_suffix}")
 
-    depth_obs = generate_image_obs_from_cameras([with_depth(OverShoulderLeftCameraCfg)])()
+    depth_obs = generate_image_obs_from_cameras([with_data_types(OverShoulderLeftCameraCfg, "depth")])()
     assert hasattr(depth_obs, "over_shoulder_left_camera")
     assert hasattr(depth_obs, "over_shoulder_left_camera_depth")
     assert depth_obs.over_shoulder_left_camera_depth.params["data_type"] == "depth"

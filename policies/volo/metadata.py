@@ -9,6 +9,8 @@ without any policy-server client library installed.
 
 import numpy as np
 
+from robolab.eval.gt_state import object_id_map
+
 # An object counts as "lifted" once raised this far (meters) above the
 # position it had when this client first saw it in the episode.
 LIFT_THRESHOLD_M = 0.03
@@ -16,10 +18,13 @@ LIFT_THRESHOLD_M = 0.03
 GRASP_CLOSEDNESS_THRESHOLD = 0.25
 
 # VoLo server wire keys, mapped from the observation terms that feed them.
-# The pos/quat/K terms exist only for depth-enabled registrations (see
-# robolab.core.observations.observation_utils). Camera pose is env-local;
-# quaternion is world-frame OpenGL (w, x, y, z); K is in pixels.
+# The depth, pos/quat/K and object-id terms exist only for VoLo registrations
+# (see policies.volo.registration). Camera pose is env-local; quaternion is
+# world-frame OpenGL (w, x, y, z); K is in pixels. The object-id images go
+# out as gt_seg/body_ids*, with their {name: id} legend as gt_seg/obj_body_id.
 ORCHESTRATOR_KEY_MAP: dict[str, str] = {
+    "over_shoulder_left_camera_object_ids": "gt_seg/body_ids",
+    "egocentric_mirrored_camera_object_ids": "gt_seg/body_ids_front",
     "over_shoulder_left_camera_depth": "observation/depth_external",
     "egocentric_mirrored_camera_depth": "observation/depth_front",
     "egocentric_mirrored_camera": "observation/front_image_left_raw",
@@ -43,7 +48,8 @@ class OrchestratorMetadataMixin:
 
     The resulting request is a strict superset of the backend's wire format:
 
-    - depth, front RGB, camera calibration, and opt-in GT state, collected by
+    - depth, front RGB, camera calibration, object-id images, and opt-in GT
+      state, collected by
       :meth:`_orchestrator_keys` per :data:`ORCHESTRATOR_KEY_MAP` (the depth
       and calibration observation terms exist when environments were
       registered via :func:`policies.volo.registration.register_volo_envs`)
@@ -93,6 +99,9 @@ class OrchestratorMetadataMixin:
         gt_state = self._get_env_gt_state(raw_obs, env_id)
         if gt_state is not None:
             out["gt_state"] = self._derive_gt_fields(gt_state, env_id)
+            # The id images' legend; its names are the gt_state scene objects.
+            if any(key.startswith("gt_seg/body_ids") for key in out):
+                out["gt_seg/obj_body_id"] = object_id_map(gt_state["scene_objects"])
         return out
 
     def _pack_request(self, extracted_obs: dict, instruction: str) -> dict:
